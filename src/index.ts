@@ -3,9 +3,10 @@
  *
  * Runs on a cron schedule (default: every hour) and outputs a ranked list
  * of coins worth attention based on relative strength, flow, and structure.
+ * Also serves a live web dashboard on PORT (default: 3000).
  *
  * Usage:
- *   npm run dev          # run once immediately + start scheduler
+ *   npm run dev          # run once immediately + start scheduler + web server
  *   npm run build        # compile TypeScript
  *   npm start            # run compiled build
  *
@@ -20,14 +21,23 @@ import { scoreAndRankCoins } from './engines/scorer';
 import { printOutput, printSummaryLine } from './output/formatter';
 import { BotOutput } from './types';
 import { RUN_CRON } from './config';
+import { createWebServer } from './server/webserver';
+import { setStatus, setLatest, getSnapshot } from './server/store';
 
 dotenv.config();
+
+// ─── Web Server ───────────────────────────────────────────────────────────────
+
+const { io, start: startWebServer } = createWebServer();
 
 // ─── Core Run Function ────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
   const timestamp = new Date();
   console.log(`\n[${timestamp.toISOString()}] Starting analysis run...`);
+
+  setStatus('scanning');
+  io.emit('scan:start');
 
   let output: BotOutput;
 
@@ -55,13 +65,19 @@ async function run(): Promise<void> {
     if (err instanceof Error && err.stack) {
       console.error(err.stack);
     }
+    setStatus('error', msg);
+    io.emit('scan:error', { message: msg });
     return;
   }
 
-  // Step 6: Print output
+  // Step 6: Print output to terminal
   console.log('  [3/3] Rendering output...');
   printOutput(output);
   printSummaryLine(output);
+
+  // Step 7: Push to web dashboard
+  setLatest(output);
+  io.emit('scan:complete', getSnapshot());
 }
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
@@ -74,6 +90,9 @@ async function main(): Promise<void> {
   console.log(`  Schedule: ${RUN_CRON}`);
   console.log('  Data:     Binance public API (no key required)');
   console.log('  Press Ctrl+C to stop.\n');
+
+  // Start web dashboard
+  startWebServer();
 
   // Run immediately on start
   await run();

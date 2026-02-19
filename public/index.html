@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Strong Coin Finder</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <span class="logo">◈</span>
+      <h1>Strong Coin Finder</h1>
+      <span class="live-badge" id="liveBadge">LIVE</span>
+    </div>
+    <div class="header-right">
+      <span class="scan-spinner hidden" id="scanSpinner">
+        <span class="spinner"></span> Scanning…
+      </span>
+      <span class="last-updated" id="lastUpdated">—</span>
+    </div>
+  </header>
+
+  <!-- ── BTC Regime Banner ───────────────────────────────────────────────── -->
+  <section class="regime-banner" id="regimeBanner">
+    <div class="regime-inner">
+      <div class="regime-label-wrap">
+        <span class="regime-dot" id="regimeDot"></span>
+        <span class="regime-label" id="regimeLabel">Connecting…</span>
+      </div>
+      <div class="regime-changes">
+        <span class="regime-tf" id="regimeBtc1h">BTC 1H: —</span>
+        <span class="regime-tf" id="regimeBtc4h">BTC 4H: —</span>
+      </div>
+      <p class="regime-desc" id="regimeDesc"></p>
+    </div>
+  </section>
+
+  <!-- ── Main Content ────────────────────────────────────────────────────── -->
+  <main>
+    <!-- Paused notice -->
+    <div class="paused-notice hidden" id="pausedNotice">
+      <span class="warn-icon">⚠</span>
+      <strong>Scan reduced — BTC impulsively dumping.</strong>
+      Showing strongest survivors only.
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">◈</div>
+      <p>Waiting for first scan…</p>
+      <p class="empty-sub">Results will appear automatically once the bot completes its first run.</p>
+    </div>
+
+    <!-- Coin grid -->
+    <div class="coin-grid" id="coinGrid"></div>
+  </main>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+  <footer>
+    These coins are worth your attention — <strong>you</strong> choose entries, size, and exits.
+    This is not financial advice.
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
