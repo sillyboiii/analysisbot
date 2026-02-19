@@ -44,7 +44,7 @@ async function run(): Promise<void> {
 
   try {
     // Step 1: Classify BTC regime (global gate)
-    console.log('  [1/3] Fetching BTC market context...');
+    console.log('  [1/4] Fetching BTC market context...');
     const marketContext = await getMarketContext();
 
     // Step 2 + 3 + 4: Score long candidates (also prefetches BTC candle cache)
@@ -87,8 +87,8 @@ async function run(): Promise<void> {
     return;
   }
 
-  // Step 6: Print output to terminal
-  console.log('  [3/3] Rendering output...');
+  // Step 4: Print output to terminal
+  console.log('  [4/4] Rendering output...');
   printOutput(output);
   printSummaryLine(output);
 
