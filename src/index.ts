@@ -23,6 +23,7 @@ import { BotOutput } from './types';
 import { RUN_CRON } from './config';
 import { createWebServer } from './server/webserver';
 import { setStatus, setLatest, getSnapshot } from './server/store';
+import { sendTelegramUpdate } from './output/telegram';
 
 dotenv.config();
 
@@ -78,6 +79,9 @@ async function run(): Promise<void> {
   // Step 7: Push to web dashboard
   setLatest(output);
   io.emit('scan:complete', getSnapshot());
+
+  // Step 8: Send Telegram update (no-op if not configured)
+  await sendTelegramUpdate(output);
 }
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
