@@ -17,7 +17,7 @@
 import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
 import { getMarketContext } from './engines/marketContext';
-import { scoreAndRankCoins } from './engines/scorer';
+import { scoreAndRankCoins, scoreAndRankShorts } from './engines/scorer';
 import { printOutput, printSummaryLine } from './output/formatter';
 import { BotOutput } from './types';
 import { RUN_CRON } from './config';
@@ -47,16 +47,32 @@ async function run(): Promise<void> {
     console.log('  [1/3] Fetching BTC market context...');
     const marketContext = await getMarketContext();
 
-    // Step 2 + 3 + 4: Score all coins
-    console.log(`  [2/3] Analyzing coins (BTC regime: ${marketContext.regime})...`);
+    // Step 2 + 3 + 4: Score long candidates (also prefetches BTC candle cache)
+    console.log(`  [2/4] Analyzing long candidates (BTC regime: ${marketContext.regime})...`);
     const rankings = await scoreAndRankCoins(marketContext);
 
-    // Step 5: Assemble output
+    // Step 5: Score short candidates (reuses BTC candle cache from step 2)
+    console.log('  [3/4] Analyzing short candidates...');
+    const shortCandidates = await scoreAndRankShorts(marketContext);
+
+    // Symmetry / market indecision check
+    // If both long and short signals are weak there is no high-confidence trade
+    const maxRsScore  = rankings.length > 0
+      ? Math.max(...rankings.map((c) => c.rsScore))
+      : 0;
+    const maxRwScore  = shortCandidates.length > 0
+      ? Math.max(...shortCandidates.map((s) => s.rwScore))
+      : 0;
+    const marketIndecision = maxRsScore < 40 && maxRwScore < 0.4;
+
+    // Step 6: Assemble output
     const paused = !marketContext.allowFullScan;
     output = {
       timestamp,
       marketContext,
       rankings,
+      shortCandidates,
+      marketIndecision,
       paused,
       pauseReason: paused ? 'BTC impulsively dumping — reduced output' : undefined,
     };

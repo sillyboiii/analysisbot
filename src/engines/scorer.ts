@@ -1,9 +1,10 @@
 import { sleep } from '../data/binance';
 import { analyzeRelativeStrength, prefetchBtcCandles } from './relativeStrength';
+import { analyzeRelativeWeakness } from './relativeWeakness';
 import { analyzeFlow } from './flowAnalysis';
 import { analyzeMicrostructure } from './microstructure';
 import { WATCHLIST, WEIGHTS, SCORE_CUTOFFS, API } from '../config';
-import { CoinScore, MarketContext, RelativeStrengthResult, FlowAnalysisResult, MicrostructureResult } from '../types';
+import { CoinScore, ShortScore, MarketContext, RelativeStrengthResult, FlowAnalysisResult, MicrostructureResult } from '../types';
 
 /**
  * Step 5 — Scoring & Ranking Engine
@@ -159,6 +160,88 @@ function rankAndFilter(coins: CoinScore[], context: MarketContext): CoinScore[] 
 
   // 3. Apply market context output cap
   return filtered.slice(0, context.maxOutputCoins);
+}
+
+// ─── Short Ranking ────────────────────────────────────────────────────────────
+
+const MAX_SHORT_OUTPUT = 5;
+const MIN_RW_SCORE = 0.4;
+// Symmetry: don't show a coin as a short if it also has strong long signal
+const MAX_RS_FOR_SHORT = 50;
+
+/**
+ * Score and rank short candidates from the watchlist.
+ *
+ * A coin qualifies when:
+ *   - RW score >= 0.4 (meaningful structural weakness vs BTC)
+ *   - RS score < 50  (symmetry check — not a strong long at the same time)
+ *   - Short setup type is not 'no_short' (price hasn't reclaimed above supply)
+ *
+ * BTC candles must already be prefetched before calling this.
+ */
+export async function scoreAndRankShorts(
+  _context: MarketContext
+): Promise<ShortScore[]> {
+  const results: ShortScore[] = [];
+
+  for (const symbol of WATCHLIST) {
+    try {
+      const short = await analyzeShortCandidate(symbol);
+      if (short) results.push(short);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`  [WARN][short] ${symbol}: skipped — ${msg}`);
+    }
+    await sleep(API.requestDelay);
+  }
+
+  return results
+    .filter((s) => s.rwScore >= MIN_RW_SCORE && s.shortSetupType !== 'no_short')
+    .sort((a, b) => b.rwScore - a.rwScore)
+    .slice(0, MAX_SHORT_OUTPUT);
+}
+
+async function analyzeShortCandidate(symbol: string): Promise<ShortScore | null> {
+  // RS and RW share the same BTC cache; run them in parallel
+  const [rs, rwAnalysis] = await Promise.all([
+    analyzeRelativeStrength(symbol),
+    analyzeRelativeWeakness(symbol),
+  ]);
+
+  // Symmetry check: coin also has strong long signal → skip
+  if (rs.rsScore >= MAX_RS_FOR_SHORT) return null;
+
+  const { rw, shortSetupType, keyLevels } = rwAnalysis;
+  const verdict = buildShortVerdict(rw, shortSetupType);
+
+  return {
+    symbol,
+    rwScore: rw.rwScore,
+    rsScore: rs.rsScore,
+    shortSetupType,
+    keyLevels,
+    rw,
+    verdict,
+  };
+}
+
+function buildShortVerdict(
+  rw: import('../types').RelativeWeaknessResult,
+  setupType: import('../types').ShortSetupType
+): string {
+  const rwDesc =
+    rw.verdict === 'prime'       ? 'Prime weakness vs BTC' :
+    rw.verdict === 'conditional' ? 'Conditional weakness'  :
+                                   'Marginal weakness';
+
+  const setupDesc: Record<import('../types').ShortSetupType, string> = {
+    failed_reclaim:         'Failed reclaim pattern',
+    breakdown_continuation: 'Breakdown continuation',
+    watch_zone:             'Watch zone — not triggered',
+    no_short:               'No short setup',
+  };
+
+  return `${rwDesc} | ${setupDesc[setupType]}`;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

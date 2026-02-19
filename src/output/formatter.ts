@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { BotOutput, CoinScore, MarketContext, CrowdingRisk, SetupType } from '../types';
+import { BotOutput, CoinScore, ShortScore, MarketContext, CrowdingRisk, SetupType, ShortSetupType } from '../types';
 
 // ─── Main Print ───────────────────────────────────────────────────────────────
 
@@ -20,16 +20,27 @@ export function printOutput(output: BotOutput): void {
     console.log(chalk.yellow('  Showing only the strongest survivors:\n'));
   }
 
+  // Market indecision warning
+  if (output.marketIndecision) {
+    console.log(chalk.yellow.bold('\n  MARKET INDECISION — Both long and short signals are weak.'));
+    console.log(chalk.gray('  No trade environment. Sit on hands.\n'));
+    console.log(divider + '\n');
+    return;
+  }
+
   if (output.rankings.length === 0) {
     console.log(chalk.yellow('\n  No coins passed all filters this cycle.'));
     console.log(chalk.gray('  This is correct behavior — do not force trades.\n'));
   } else {
-    console.log(chalk.bold('\n  RANKED COINS:\n'));
+    console.log(chalk.bold('\n  LONG CANDIDATES:\n'));
     output.rankings.forEach((coin, i) => printCoin(coin, i + 1));
   }
 
+  // Short candidates section
+  printShortCandidates(output.shortCandidates, divider);
+
   console.log(divider);
-  console.log(chalk.gray('  These coins are worth your attention — YOU choose entries, size, and exits.'));
+  console.log(chalk.gray('  Attention list only — YOU choose entries, size, and exits.'));
   console.log(divider + '\n');
 }
 
@@ -168,6 +179,79 @@ const oiLabelMap: Record<string, string> = {
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
+
+// ─── Short Candidates Block ───────────────────────────────────────────────────
+
+function printShortCandidates(shorts: ShortScore[], divider: string): void {
+  console.log(divider);
+
+  if (shorts.length === 0) {
+    console.log(chalk.gray('\n  No short candidates this cycle.\n'));
+    return;
+  }
+
+  console.log(chalk.red.bold('\n  SHORT CANDIDATES:\n'));
+  shorts.forEach((s, i) => printShortCoin(s, i + 1));
+}
+
+function printShortCoin(short: ShortScore, rank: number): void {
+  const rwPct = (short.rwScore * 100).toFixed(0);
+  const scoreColor =
+    short.rwScore >= 0.7 ? chalk.red.bold :
+    short.rwScore >= 0.5 ? chalk.yellow.bold :
+    chalk.white.bold;
+
+  const setupLabel = shortSetupLabelMap[short.shortSetupType] ?? short.shortSetupType;
+
+  console.log(
+    `  ${chalk.bold.white(String(rank).padStart(2))}. ` +
+    chalk.bold.red(short.symbol.padEnd(8)) +
+    scoreColor(`RW: ${rwPct}/100`) +
+    chalk.gray(` | ${setupLabel}`)
+  );
+
+  // RW score bar
+  const rw = short.rw;
+  console.log(chalk.gray(
+    `      Drawdown: ${bar(rw.rwDrawdown * 100)}  ` +
+    `Structure: ${bar(rw.rwStructure * 100)}  ` +
+    `Failed reclaims: ${bar(rw.rwFailedReclaims * 100)}  ` +
+    `Bounce weakness: ${bar(rw.rwBounceWeakness * 100)}`
+  ));
+
+  // Raw differentials
+  console.log(
+    chalk.gray('      DD diff: ') +
+    chalk.red(`+${rw.drawdownDiff.toFixed(2)}%`) +
+    chalk.gray('  LL excess: ') +
+    chalk.red(`${rw.llCountDiff}`) +
+    chalk.gray('  Failed reclaims: ') +
+    chalk.red(`${rw.failedReclaimCount}`) +
+    chalk.gray('  Bounce lag: ') +
+    chalk.red(`${rw.bounceWeakness.toFixed(2)}%`)
+  );
+
+  // Trade plan
+  const kl = short.keyLevels;
+  const targetStr = kl.targets
+    .map((t, i) => chalk.gray(`T${i + 1}: `) + chalk.yellow(t.toFixed(4)))
+    .join('  ');
+
+  console.log(
+    chalk.gray('      Entry below: ') + chalk.red.bold(kl.entryBelow.toFixed(4)) +
+    chalk.gray('  Stop: ') + chalk.yellow(kl.stopAbove.toFixed(4))
+  );
+  console.log(chalk.gray('      Targets: ') + targetStr);
+
+  console.log('');
+}
+
+const shortSetupLabelMap: Record<ShortSetupType, string> = {
+  failed_reclaim:         chalk.red('Failed reclaim'),
+  breakdown_continuation: chalk.red('Breakdown continuation'),
+  watch_zone:             chalk.yellow('Watch zone'),
+  no_short:               chalk.gray('No short'),
+};
 
 // ─── Summary line for logs ────────────────────────────────────────────────────
 

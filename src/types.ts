@@ -104,12 +104,53 @@ export interface CoinScore {
   structure: MicrostructureResult;
 }
 
+// ─── Relative Weakness (Short Side) ──────────────────────────────────────────
+
+export type ShortSetupType =
+  | 'failed_reclaim'
+  | 'breakdown_continuation'
+  | 'watch_zone'
+  | 'no_short';
+
+export interface RelativeWeaknessResult {
+  symbol: string;
+  rwScore: number;            // 0.0–1.0 composite weakness score
+  drawdownDiff: number;       // coin DD% − BTC DD% (positive = coin bled more)
+  llCountDiff: number;        // coin lower-lows count − BTC count
+  failedReclaimCount: number; // failed reclaims in last 24h
+  bounceWeakness: number;     // BTC bounce% − coin bounce% (positive = coin lagged)
+  rwDrawdown: number;         // normalised component 0–1
+  rwStructure: number;        // normalised component 0–1
+  rwFailedReclaims: number;   // normalised component 0–1
+  rwBounceWeakness: number;   // normalised component 0–1
+  verdict: 'prime' | 'conditional' | 'ignore';
+}
+
+export interface ShortKeyLevels {
+  currentPrice: number;
+  entryBelow: number;   // trigger: short on acceptance below this
+  stopAbove: number;    // invalidation: close above this = out
+  targets: number[];    // 2–3 downside price targets
+}
+
+export interface ShortScore {
+  symbol: string;
+  rwScore: number;            // 0.0–1.0
+  rsScore: number;            // long RS score kept for symmetry check display
+  shortSetupType: ShortSetupType;
+  keyLevels: ShortKeyLevels;
+  rw: RelativeWeaknessResult;
+  verdict: string;            // one-line human summary
+}
+
 // ─── Bot Output ───────────────────────────────────────────────────────────────
 
 export interface BotOutput {
   timestamp: Date;
   marketContext: MarketContext;
   rankings: CoinScore[];
+  shortCandidates: ShortScore[];
+  marketIndecision: boolean;  // true when both RS and RW signals are weak
   paused: boolean;
   pauseReason?: string;
 }

@@ -10,7 +10,7 @@
  */
 
 import axios from 'axios';
-import { BotOutput, CoinScore } from '../types';
+import { BotOutput, CoinScore, ShortScore } from '../types';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ const SETUP_LABEL: Record<string, string> = {
 const RANK_EMOJI = ['🥇', '🥈', '🥉'];
 
 function formatMessage(output: BotOutput): string {
-  const { marketContext: ctx, rankings, paused, pauseReason, timestamp } = output;
+  const { marketContext: ctx, rankings, shortCandidates, marketIndecision, paused, pauseReason, timestamp } = output;
 
   const time = new Date(timestamp).toUTCString().replace(':00 GMT', ' UTC').slice(5);
   const regimeEmoji = REGIME_EMOJI[ctx.regime] ?? '📊';
@@ -97,20 +97,35 @@ function formatMessage(output: BotOutput): string {
     lines.push(`⚠ <i>${escHtml(pauseReason)}</i>`);
   }
 
-  if (!rankings || rankings.length === 0) {
+  // Market indecision
+  if (marketIndecision) {
     lines.push('');
-    lines.push('No coins passed all filters this cycle.');
-    lines.push('<i>This is correct — do not force trades.</i>');
+    lines.push('⚠ <b>Market indecision</b> — both long and short signals are weak.');
+    lines.push('<i>No trade environment. Sit on hands.</i>');
     return lines.join('\n');
   }
 
-  lines.push(`<b>${rankings.length}</b> coin${rankings.length !== 1 ? 's' : ''} qualified`);
-  lines.push('');
-  lines.push('─────────────────────────');
+  // ── Long candidates ──
+  if (!rankings || rankings.length === 0) {
+    lines.push('');
+    lines.push('No long candidates this cycle.');
+  } else {
+    lines.push(`<b>${rankings.length}</b> long candidate${rankings.length !== 1 ? 's' : ''}`);
+    lines.push('');
+    lines.push('─────────────────────────');
+    for (let i = 0; i < rankings.length; i++) {
+      lines.push(formatCoin(rankings[i], i));
+    }
+  }
 
-  // ── Coin blocks ──
-  for (let i = 0; i < rankings.length; i++) {
-    lines.push(formatCoin(rankings[i], i));
+  // ── Short candidates ──
+  if (shortCandidates && shortCandidates.length > 0) {
+    lines.push('─────────────────────────');
+    lines.push(`🔻 <b>${shortCandidates.length} short candidate${shortCandidates.length !== 1 ? 's' : ''}</b>`);
+    lines.push('');
+    for (let i = 0; i < shortCandidates.length; i++) {
+      lines.push(formatShortCoin(shortCandidates[i], i));
+    }
   }
 
   // ── Footer ──
@@ -122,8 +137,12 @@ function formatMessage(output: BotOutput): string {
   // Telegram hard limit: 4096 chars
   if (message.length <= 4096) return message;
 
-  // Trim to top 5 if too long
-  const trimmed = formatMessageTopN(output, 5);
+  // Trim to top 5 longs, top 3 shorts if too long
+  const trimmed = formatMessage({
+    ...output,
+    rankings: output.rankings.slice(0, 5),
+    shortCandidates: (output.shortCandidates ?? []).slice(0, 3),
+  });
   return trimmed.length <= 4096
     ? trimmed
     : trimmed.slice(0, 4090) + '\n[…]';
@@ -190,9 +209,51 @@ function formatCoin(coin: CoinScore, index: number): string {
   return lines.join('\n');
 }
 
-// Same as formatMessage but capped at top N coins
-function formatMessageTopN(output: BotOutput, n: number): string {
-  return formatMessage({ ...output, rankings: output.rankings.slice(0, n) });
+function formatShortCoin(short: ShortScore, index: number): string {
+  const rw  = short.rw;
+  const kl  = short.keyLevels;
+
+  const rankIcon = RANK_EMOJI[index] ?? `#${index + 1}`;
+  const rwPct    = (short.rwScore * 100).toFixed(0);
+
+  const setupLabels: Record<string, string> = {
+    failed_reclaim:         '✗ Failed reclaim',
+    breakdown_continuation: '↓ Breakdown',
+    watch_zone:             '◎ Watch zone',
+    no_short:               '— No short',
+  };
+  const setup = setupLabels[short.shortSetupType] ?? short.shortSetupType;
+
+  const strengthIcon =
+    short.rwScore >= 0.7 ? '🔴' :
+    short.rwScore >= 0.5 ? '🟠' : '🟡';
+
+  const lines: string[] = [];
+
+  lines.push(
+    `${rankIcon} <b>${escHtml(short.symbol)}</b>  ` +
+    `RW <b>${rwPct}/100</b> ${strengthIcon}  <i>${escHtml(setup)}</i>`,
+  );
+
+  lines.push(
+    `    DD diff <code>+${rw.drawdownDiff.toFixed(2)}%</code>  ` +
+    `LL excess <code>${rw.llCountDiff}</code>  ` +
+    `Failed reclaims <code>${rw.failedReclaimCount}</code>  ` +
+    `Bounce lag <code>${rw.bounceWeakness.toFixed(2)}%</code>`,
+  );
+
+  const targetStr = kl.targets
+    .map((t, i) => `T${i + 1}: ${t.toFixed(4)}`)
+    .join('  ');
+
+  lines.push(
+    `    → Short below <code>${kl.entryBelow.toFixed(4)}</code>  ` +
+    `· Stop <code>${kl.stopAbove.toFixed(4)}</code>`,
+  );
+  lines.push(`    → Targets: <code>${escHtml(targetStr)}</code>`);
+
+  lines.push('');
+  return lines.join('\n');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
